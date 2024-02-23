@@ -17,7 +17,9 @@
 
 namespace Colopl\TiDB\Schema;
 
+use Closure;
 use Illuminate\Database\Schema\Blueprint as BaseBluePrint;
+use Illuminate\Database\Schema\ForeignIdColumnDefinition as ForeignIdColumnDefinition;
 
 class Blueprint extends BaseBluePrint
 {
@@ -32,12 +34,69 @@ class Blueprint extends BaseBluePrint
     public $preSplitRegions;
 
     /**
+     * @var array
+     */
+    public $defaultIdOptions;
+
+
+    private function getDefaultIdOptionsFromEnv()
+    {
+        $defaultIdOptions = [
+            'autoIncrement' => true,
+            'autoRandom' => false,
+            'unsigned' => false
+        ];
+        if (getenv('DB_DEFAULT_ID_OPTION_AUTO_INCREMENT')) {
+            $defaultIdOptions['autoIncrement'] = getenv('DB_DEFAULT_ID_OPTION_AUTO_INCREMENT') === '1';
+        }
+        if (getenv('DB_DEFAULT_ID_OPTION_AUTO_RANDOM')) {
+            $defaultIdOptions['autoRandom'] = getenv('DB_DEFAULT_ID_OPTION_AUTO_RANDOM') === '1';
+            $defaultIdOptions['autoIncrement'] = !$defaultIdOptions['autoRandom'];
+        }
+        if (getenv('DB_DEFAULT_ID_OPTION_UNSIGNED')) {
+            $defaultIdOptions['unsigned'] = getenv('DB_DEFAULT_ID_OPTION_UNSIGNED') === '1';
+        }
+        return $defaultIdOptions;
+    }
+
+    public function __construct($table, Closure $callback = null, $prefix = '')
+    {
+        $this->defaultIdOptions = $this->getDefaultIdOptionsFromEnv();
+        parent::__construct($table, $callback, $prefix);
+    }
+
+    /**
      * @param string $column
      * @return ColumnDefinition
      */
-    public function id($column = 'id')
+    public function id($column = 'id', $options = [])
     {
-        return $this->bigInteger($column)->autoRandom();
+        $options = array_merge($this->defaultIdOptions, $options);
+
+        if ($options['autoRandom']) {
+            return $this->bigInteger($column, false, $options['unsigned'])->autoRandom();
+        } else {
+            return $this->bigInteger($column, $options['autoIncrement'], $options['unsigned']);
+        }
+    }
+
+
+    /**
+     * Create a new unsigned big integer (8-byte) column on the table.
+     *
+     * @param  string  $column
+     * @return \Illuminate\Database\Schema\ForeignIdColumnDefinition
+     */
+    public function foreignId($column, $options = [])
+    {
+        $options = array_merge($this->defaultIdOptions, $options);
+
+        return $this->addColumnDefinition(new ForeignIdColumnDefinition($this, [
+            'type' => 'bigInteger',
+            'name' => $column,
+            'autoIncrement' => false,
+            'unsigned' => $options['unsigned'],
+        ]));
     }
 
     /**
